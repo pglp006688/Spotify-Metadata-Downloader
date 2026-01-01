@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spotify Metadata Downloader</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    #output { margin-top: 24px; }
+    input[type=text] { width: 400px; padding: 6px; }
+    button { padding: 6px 12px; }
+    pre { background: #f3f3f3; padding: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Spotify Metadata Downloader</h1>
+  <p>Enter a Spotify Track URL and fetch its metadata.</p>
+  
+  <label for="track-url">Spotify Track URL:</label><br/>
+  <input type="text" id="track-url" placeholder="e.g. https://open.spotify.com/track/7ouMYWpwJ422jRcDASZB7P" />
+  <button onclick="getMetadata()">Get Metadata</button>
+
+  <div id="output"></div>
+
+  <script>
+    // Insert your Spotify API Client ID below
+    const CLIENT_ID = 'YOUR_SPOTIFY_CLIENT_ID';
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
+    let accessToken = '';
+
+    function getTrackIdFromUrl(url) {
+      const match = url.match(/track\/([a-zA-Z0-9]{22})/);
+      return match ? match[1] : null;
+    }
+
+    function authorizeSpotify() {
+      const scopes = 'user-read-private';
+      const authUrl =
+        'https://accounts.spotify.com/authorize' +
+        '?response_type=token' +
+        '&client_id=' + encodeURIComponent(CLIENT_ID) +
+        '&scope=' + encodeURIComponent(scopes) +
+        '&redirect_uri=' + encodeURIComponent(REDIRECT_URI);
+      window.location = authUrl;
+    }
+
+    function getHashParams() {
+      // Extract access_token from URL hash
+      const hash = window.location.hash.substring(1);
+      const params = {};
+      hash.split('&').forEach(function(kv) {
+        const parts = kv.split('=');
+        if (parts.length === 2) params[parts[0]] = decodeURIComponent(parts[1]);
+      });
+      return params;
+    }
+
+    // On page load, see if access_token has been returned
+    window.onload = function() {
+      const params = getHashParams();
+      if (params.access_token) {
+        accessToken = params.access_token;
+        window.location.hash = '';
+      }
+    };
+
+    function getMetadata() {
+      document.getElementById('output').textContent = '';
+      const url = document.getElementById('track-url').value.trim();
+      const trackId = getTrackIdFromUrl(url);
+      if (!trackId) {
+        document.getElementById('output').innerHTML = '<span style="color:red;">Invalid Spotify track URL.</span>';
+        return;
+      }
+      if (!accessToken) {
+        authorizeSpotify();
+        return;
+      }
+
+      fetch('https://api.spotify.com/v1/tracks/' + trackId, {
+        headers: { 'Authorization': 'Bearer ' + accessToken }
+      })
+      .then(res => {
+        if (res.status === 401) {  // Token expired
+          accessToken = '';
+          authorizeSpotify();
+          throw new Error('Authorize again');
+        }
+        return res.json();
+      })
+      .then(data => {
+        const metadata = {
+          name: data.name,
+          artists: data.artists.map(a => a.name).join(', '),
+          album: data.album.name,
+          release_date: data.album.release_date,
+          popularity: data.popularity,
+          external_url: data.external_urls.spotify
+        };
+        document.getElementById('output').innerHTML = "<b>Metadata:</b><br><pre>" + JSON.stringify(metadata, null, 2) + "</pre>" +
+        "<a href='" + metadata.external_url + "' target='_blank'>Open in Spotify</a>";
+      })
+      .catch(err => {
+        document.getElementById('output').innerHTML = '<span style="color:red;">Error fetching metadata.</span>';
+      });
+    }
+  </script>
+</body>
+</html>
